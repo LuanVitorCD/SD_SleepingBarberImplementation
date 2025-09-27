@@ -14,7 +14,7 @@ st.title('Problema do Barbeiro Dorminhoco — Visualização ao vivo')
 # Sidebar (controles globais)
 # -------------------------
 st.sidebar.header('Configurações da Simulação')
-num_barbers = st.sidebar.number_input('Número de barbeiros', min_value=1, max_value=10, value=2, step=1)
+num_barbers = st.sidebar.number_input('Número de barbeiros', min_value=1, max_value=10, value=1, step=1)
 num_chairs = st.sidebar.number_input('Número de cadeiras na sala de espera', min_value=0, max_value=25, value=5, step=1)
 arrival_rate = st.sidebar.slider('Tempo médio entre chegadas (s)', 0.1, 5.0, 1.0, 0.1)
 enable_solution = st.sidebar.checkbox('Ativar solução para evitar deadlock (Modo SAFE)', value=True)

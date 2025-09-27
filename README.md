@@ -12,8 +12,7 @@ Este projeto permite simular uma barbearia com múltiplos barbeiros e cadeiras d
 
 ### Pré-visualização
 
-![Pré-visualização da interface da simulação, mostrando as cadeiras de espera e os barbeiros em seus estados.](https://i.imgur.com/8a3jZpP.png)
-*(Sugestão: grave um GIF da simulação em ação e substitua esta imagem para uma demonstração dinâmica!)*
+![Pré-visualização da interface da simulação, mostrando as cadeiras de espera e os barbeiros em seus estados.](https://i.imgur.com/jpAZOTL.png)
 
 ---
 
@@ -84,7 +83,7 @@ A estrutura do projeto foi pensada para ser didática:
 ### 1. Clone o Repositório
 
 ```bash
-git clone [https://github.com/LuanVitorCD/SE_SleepingBarberImplementation.git](https://github.com/LuanVitorCD/SE_SleepingBarberImplementation.git)
+git clone https://github.com/LuanVitorCD/SE_SleepingBarberImplementation.git
 cd SE_SleepingBarberImplementation
 ```
 

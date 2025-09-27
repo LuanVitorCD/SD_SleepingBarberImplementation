@@ -138,39 +138,53 @@ with controls_box:
 # Função de desenho (vis)
 # -------------------------
 def draw_snapshot(snap):
-    fig, ax = plt.subplots(figsize=(5, 3))  # levemente menor para ocupar coluna
-    ax.set_title('Sala de espera & Barbeiros')
+    fig, ax = plt.subplots(figsize=(6, 3.5))
     ax.axis('off')
+    ax.set_title('Sala de espera & Barbeiros', fontsize=12, weight='bold')
 
     chairs = snap['num_chairs']
     waiting = snap['waiting']
     barber_states = snap['barber_states']
 
-    # desenha cadeiras (linha superior)
+    # cadeiras de espera
     for i in range(chairs):
-        x = i
-        y = 1
-        circle = plt.Circle((x, y), 0.28, linewidth=1)
+        x, y = i, 1
         if i < len(waiting):
-            ax.add_patch(circle)
-            ax.text(x, y, str(waiting[i]), va='center', ha='center', color='white')
+            circle = plt.Circle((x, y), 0.28, color="#4a90e2")  # azul = ocupado
+            ax.text(x, y, str(waiting[i]), va='center', ha='center', color='white', fontsize=8)
         else:
-            ax.add_patch(circle)
-            # desenha contorno (sem preenchimento) - já feito por default
+            circle = plt.Circle((x, y), 0.28, edgecolor="#999", facecolor="none", lw=1.2)
+        ax.add_patch(circle)
 
-    # desenha barbeiros (linha inferior)
-    for i in range(len(barber_states)):
-        x = i * 2
-        y = -1
-        state = barber_states[i]
-        rect = plt.Rectangle((x - 0.4, y - 0.3), 0.8, 0.6, linewidth=1)
+    # barbeiros
+    colors = {
+        "idle": "#bbb",               # cinza
+        "serving": "#4caf50",         # verde
+        "sleeping": "#e53935",        # vermelho
+        "looking_for_customer": "#ffb300"  # amarelo
+    }
+    for i, state in enumerate(barber_states):
+        x, y = i * 2, -1
+        if "serving" in state:
+            color = colors["serving"]
+        elif "sleep" in state:
+            color = colors["sleeping"]
+        elif "looking" in state:
+            color = colors["looking_for_customer"]
+        else:
+            color = colors["idle"]
+
+        rect = plt.Rectangle((x - 0.4, y - 0.3), 0.8, 0.6,
+                             facecolor=color, edgecolor="black", lw=1.2)
         ax.add_patch(rect)
-        ax.text(x, y, f'B{i}\n{state}', va='center', ha='center')
+        ax.text(x, y, f"B{i}\n{state}", va='center', ha='center',
+                fontsize=8, color="white" if color != "#bbb" else "black")
 
     ax.set_xlim(-1, max(chairs, len(barber_states) * 2))
     ax.set_ylim(-2, 2)
     fig.tight_layout()
     return fig
+
 
 
 # -------------------------

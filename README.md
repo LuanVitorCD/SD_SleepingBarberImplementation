@@ -8,11 +8,17 @@ Uma aplicação interativa desenvolvida com Streamlit para visualizar e entender
 
 Este projeto permite simular uma barbearia com múltiplos barbeiros e cadeiras de espera, demonstrando em tempo real como a ausência de mecanismos de sincronização corretos pode levar a deadlocks.
 
+## 🚀 Experimente Online!
+
+**→ [Clique aqui para usar a versão web da aplicação](https://distributedsystems-sleepingbarber-project.streamlit.app/)**
+
+Não precisa instalar nada! Use diretamente no seu navegador.
+
 ---
 
 ### Pré-visualização
 
-![Pré-visualização da interface da simulação, mostrando as cadeiras de espera e os barbeiros em seus estados.](https://i.imgur.com/jpAZOTL.png)
+![Pré-visualização da interface da simulação, mostrando as cadeiras de espera e os barbeiros em seus estados.](https://i.imgur.com/hV4oIdP.png)
 
 ---
 

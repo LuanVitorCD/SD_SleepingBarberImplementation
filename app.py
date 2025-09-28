@@ -167,7 +167,7 @@ def draw_snapshot(snap):
                              facecolor=color, edgecolor="black", lw=1.5)
         ax.add_patch(rect)
         ax.text(x, y, f"Barbeiro {i+1}\n{state}", va='center', ha='center',
-                fontsize=9, color="white" if color != "#bbb" else "black", weight='bold')
+                fontsize=9, color="black" if color != "#bbb" else "black", weight='bold')
 
     ax.set_aspect('equal', adjustable='box')
     

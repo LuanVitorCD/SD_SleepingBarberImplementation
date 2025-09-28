@@ -10,10 +10,11 @@ class BarberSimulation:
 
         self.waiting = queue.Queue(maxsize=self.num_chairs)
         self.barbers = []
+        # O estado "sleeping" será usado para visualizar o deadlock
         self.barber_states = ["idle"] * self.num_barbers
         self.customer_count = 0
         self.served_count = 0
-        self.turned_away_count = 0  # Novo: contador de clientes que desistiram
+        self.turned_away_count = 0
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
 
@@ -31,7 +32,6 @@ class BarberSimulation:
 
     def stop(self):
         self.stop_event.set()
-        # Libera barbeiros que podem estar bloqueados no semáforo (modo SAFE)
         if self.enable_solution:
             for _ in range(self.num_barbers):
                 try:
@@ -51,27 +51,38 @@ class BarberSimulation:
             
             try:
                 self.waiting.put_nowait(cid)
-                # No modo SAFE, o cliente sinaliza ao barbeiro que há alguém esperando.
                 if self.enable_solution:
                     self.customers_sem.release()
             except queue.Full:
-                # Se a fila está cheia, o cliente vai embora.
                 with self.lock:
                     self.turned_away_count += 1
 
     def barber_worker(self, idx):
         while not self.stop_event.is_set():
             if self.enable_solution:
-                # MODO SAFE: O barbeiro espera (dorme) no semáforo até um cliente o acordar.
-                # Isso evita o busy-waiting e a condição de corrida (lost wake-up).
+                # MODO SAFE: O barbeiro espera no semáforo até um cliente o acordar.
                 self.customers_sem.acquire()
             else:
-                # MODO BUGGY: O barbeiro não tem um mecanismo de espera confiável.
-                # Ele apenas checa a fila. Se estiver vazia, ele pode perder a chegada
-                # de um cliente, gerando um deadlock (barbeiro dormindo, cliente esperando).
+                # MODO BUGGY: Lógica ajustada para forçar o deadlock de forma visível.
                 if self.waiting.empty():
-                    time.sleep(0.1) # Simula um "check", propenso a falhas
-                    continue
+                    # 1. Barbeiro olha a fila, não vê ninguém e decide dormir.
+                    with self.lock:
+                        self.barber_states[idx] = "sleeping"
+                    
+                    # 2. Ele dorme por um instante. ESTA é a janela crítica.
+                    #    Se um cliente chegar AGORA, ele verá o barbeiro "sleeping"
+                    #    e esperará, mas o barbeiro nunca foi notificado.
+                    time.sleep(0.5) 
+                    
+                    # 3. Barbeiro "acorda" por conta própria e checa a fila de novo.
+                    #    Se um cliente chegou durante o passo 2, o barbeiro não sabe.
+                    #    Ele vai apenas continuar o loop e voltar a dormir. DEADLOCK!
+                    if self.waiting.empty():
+                        continue # Volta para o início do loop e dorme de novo.
+                    else:
+                        # Se por sorte ninguém chegou, ele volta ao estado idle.
+                        with self.lock:
+                            self.barber_states[idx] = "idle"
 
             if self.stop_event.is_set():
                 break
@@ -79,12 +90,15 @@ class BarberSimulation:
             try:
                 cid = self.waiting.get_nowait()
             except queue.Empty:
-                # Isso pode acontecer em um despertar falso ou no modo buggy
                 continue
 
             with self.lock:
-                self.barber_states[idx] = f"serving {cid}"
+                self.barber_states[idx] = "serving"
             
+            # Muda o estado para o cliente específico que está sendo atendido
+            with self.lock:
+                 self.barber_states[idx] = f"serving {cid}"
+
             time.sleep(random.uniform(0.5, 1.5))  # Tempo do corte
             
             with self.lock:
@@ -100,5 +114,5 @@ class BarberSimulation:
                 "barber_states": list(self.barber_states),
                 "customer_count": self.customer_count,
                 "served_count": self.served_count,
-                "turned_away_count": self.turned_away_count, # Novo: envia para a UI
+                "turned_away_count": self.turned_away_count,
             }

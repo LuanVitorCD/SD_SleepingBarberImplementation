@@ -18,11 +18,16 @@ num_barbers = st.sidebar.number_input('Número de barbeiros', min_value=1, max_v
 num_chairs = st.sidebar.number_input('Número de cadeiras na sala de espera', min_value=0, max_value=25, value=5, step=1)
 arrival_rate = st.sidebar.slider('Tempo médio entre chegadas (s)', 0.1, 5.0, 1.0, 0.1)
 enable_solution = st.sidebar.checkbox('Ativar solução para evitar deadlock (Modo SAFE)', value=True)
-deadlock_timeout = st.sidebar.number_input('Tempo (s) para detectar possível deadlock', min_value=1.0, max_value=30.0, value=4.0, step=0.5)
+# Controles de deadlock separados: um para detecção, outro para duração do alerta.
+deadlock_detection_time = st.sidebar.number_input('Tempo (s) para detectar deadlock', min_value=1.0, max_value=30.0, value=2.0, step=0.5)
+deadlock_alert_duration = st.sidebar.number_input('Duração do alerta de deadlock (s)', min_value=1.0, max_value=60.0, value=10.0, step=1.0)
+# Novo: Opção para pausar a simulação durante o alerta
+pause_on_deadlock = st.sidebar.checkbox('Pausar simulação durante o alerta', value=True)
 show_logs = st.sidebar.checkbox('Mostrar log de eventos', value=False)
 
+
 # -------------------------
-# Layout principal: visual à esquerda, controles/estatísticas à direita
+# Layout principal
 # -------------------------
 col1, col2 = st.columns([2, 1])
 
@@ -41,7 +46,7 @@ with col2:
         log_placeholder = st.empty()
 
 # -------------------------
-# Inicializa session_state usado pelo laço
+# Inicializa session_state
 # -------------------------
 if 'sim' not in st.session_state:
     st.session_state.sim = None
@@ -53,8 +58,11 @@ if 'last_progress_time' not in st.session_state:
     st.session_state.last_progress_time = time.time()
 if 'last_served_count' not in st.session_state:
     st.session_state.last_served_count = 0
-if 'deadlock_detected' not in st.session_state:
-    st.session_state.deadlock_detected = False
+# Novo: controla a visibilidade do alerta com um timestamp
+if 'deadlock_alert_until' not in st.session_state:
+    st.session_state.deadlock_alert_until = 0
+if 'deadlock_count' not in st.session_state:
+    st.session_state.deadlock_count = 0
 
 MAX_LOG_LINES = 500
 
@@ -63,10 +71,13 @@ def _now_ts():
 
 def append_log(line: str):
     logs = st.session_state.logs
-    logs.append(f"[{_now_ts()}] {line}")
+    # Insere o novo log no início da lista para que os mais recentes apareçam em cima
+    logs.insert(0, f"[{_now_ts()}] {line}")
+    # Garante que a lista não exceda o tamanho máximo, cortando os mais antigos (do final)
     if len(logs) > MAX_LOG_LINES:
-        logs = logs[-MAX_LOG_LINES:]
-    st.session_state.logs = logs
+        st.session_state.logs = logs[:MAX_LOG_LINES]
+    else:
+        st.session_state.logs = logs
 
 # -------------------------
 # Controles (botões)
@@ -94,7 +105,8 @@ with controls_box:
             st.session_state.last_snapshot = None
             st.session_state.last_progress_time = time.time()
             st.session_state.last_served_count = 0
-            st.session_state.deadlock_detected = False
+            st.session_state.deadlock_alert_until = 0 # Zera o timer do alerta
+            st.session_state.deadlock_count = 0
             append_log("Simulação iniciada (Modo SAFE)" if enable_solution else "Simulação iniciada (Modo BUGGY)")
         else:
             st.warning('Simulação já em execução. Pare primeiro para reiniciar.')
@@ -114,7 +126,8 @@ with controls_box:
         st.session_state.logs = []
         st.session_state.last_snapshot = None
         st.session_state.last_served_count = 0
-        st.session_state.deadlock_detected = False
+        st.session_state.deadlock_alert_until = 0 # Zera o timer do alerta
+        st.session_state.deadlock_count = 0
         st.session_state.last_progress_time = time.time()
         append_log("Simulação reiniciada (estado limpo).")
 
@@ -122,7 +135,7 @@ with controls_box:
 # Função de desenho (vis)
 # -------------------------
 def draw_snapshot(snap):
-    fig, ax = plt.subplots(figsize=(10, 4)) # Aumenta um pouco a figura
+    fig, ax = plt.subplots(figsize=(10, 4))
     ax.axis('off')
     ax.set_title('Sala de Espera & Barbeiros', fontsize=14, weight='bold')
 
@@ -130,9 +143,7 @@ def draw_snapshot(snap):
     waiting = snap['waiting']
     barber_states = snap['barber_states']
 
-    # Cadeiras de espera
     if chairs > 0:
-        # Define posições para as cadeiras de forma equidistante
         chair_xs = np.linspace(0, chairs - 1, chairs)
         for i, x in enumerate(chair_xs):
             y = 1
@@ -143,7 +154,6 @@ def draw_snapshot(snap):
                 circle = plt.Circle((x, y), 0.35, edgecolor="#999", facecolor="none", lw=1.5, ls='--')
             ax.add_patch(circle)
 
-    # Barbeiros
     colors = {"idle": "#bbb", "serving": "#4caf50", "sleeping": "#e53935"}
     barber_xs = np.linspace(0, chairs - 1, len(barber_states)) if chairs > 1 else [0]
     
@@ -153,17 +163,14 @@ def draw_snapshot(snap):
         color_key = "serving" if "serving" in state else state
         color = colors.get(color_key, colors["idle"])
 
-        # CORREÇÃO: Removido o argumento 'radius' que causava o erro.
         rect = plt.Rectangle((x - 0.45, y - 0.35), 0.9, 0.7,
                              facecolor=color, edgecolor="black", lw=1.5)
         ax.add_patch(rect)
         ax.text(x, y, f"Barbeiro {i+1}\n{state}", va='center', ha='center',
                 fontsize=9, color="white" if color != "#bbb" else "black", weight='bold')
 
-    # CORREÇÃO: Define o aspect ratio como 'equal' para garantir que os círculos não achatem
     ax.set_aspect('equal', adjustable='box')
     
-    # Ajusta os limites para dar um bom espaçamento visual
     if chairs > 0:
         ax.set_xlim(-1, chairs)
     ax.set_ylim(-1.5, 2)
@@ -198,57 +205,82 @@ while st.session_state.get('sim', None):
             if old_s != new_s:
                 append_log(f"Barbeiro {i+1}: {old_s} -> {new_s}")
 
-    # Detecção de deadlock
+    # Detecção e controle do alerta de deadlock
     if snap['served_count'] > st.session_state.last_served_count:
         st.session_state.last_served_count = snap['served_count']
         st.session_state.last_progress_time = now
-        if st.session_state.deadlock_detected:
-            st.session_state.deadlock_detected = False
-            append_log("Progresso detectado — possível deadlock resolvido.")
-    else:
-        time_since_progress = now - st.session_state.last_progress_time
-        waiting_len = len(snap['waiting'])
-        is_serving = any('serving' in s for s in snap['barber_states'])
-        if time_since_progress > deadlock_timeout and waiting_len > 0 and not is_serving:
-            if not st.session_state.deadlock_detected:
-                st.session_state.deadlock_detected = True
-                reason = ("Modo BUGGY: Barbeiros 'dormiram' sem serem notificados da chegada de clientes.") if not enable_solution else \
-                         ("Falta de progresso detectada. Verifique se a taxa de chegada é muito alta.")
-                append_log(f"DEADLOCK PROVÁVEL — Motivo: {reason}")
+    
+    time_since_progress = now - st.session_state.last_progress_time
+    waiting_len = len(snap['waiting'])
+    is_serving = any('serving' in s for s in snap['barber_states'])
+    
+    is_deadlock_condition = time_since_progress > deadlock_detection_time and waiting_len > 0 and not is_serving
+    is_alert_currently_active = now < st.session_state.get('deadlock_alert_until', 0)
+
+    # Ativa o alerta se uma nova condição de deadlock for encontrada e o alerta não estiver ativo
+    if is_deadlock_condition and not is_alert_currently_active:
+        st.session_state.deadlock_count += 1
+        # Define por quanto tempo o alerta ficará visível
+        st.session_state.deadlock_alert_until = now + deadlock_alert_duration
+        reason = ("Modo BUGGY: Barbeiros 'dormiram' sem serem notificados da chegada de clientes.") if not enable_solution else \
+                 ("Falta de progresso detectada. Verifique se a taxa de chegada é muito alta.")
+        append_log(f"DEADLOCK #{st.session_state.deadlock_count} PROVÁVEL — Motivo: {reason}")
+        
+        # Pausa a interface para que o alerta possa ser lido
+        if pause_on_deadlock:
+            # Renderiza o alerta antes de pausar
+            reason_short = ("Os barbeiros não estão acordando para atender os clientes na fila. "
+                            "Isso ocorre no modo BUGGY devido a uma 'condição de corrida', onde o sinal para acordar é perdido.")
+            html = (
+                f'<div style="padding:14px;border-radius:8px;background:#b00020;color:white;">'
+                f'<strong style="font-size:18px">⚠ DEADLOCK DETECTADO (#{st.session_state.deadlock_count})</strong><br>'
+                f'<span style="font-size:13px">{reason_short}</span>'
+                f'</div>'
+            )
+            deadlock_placeholder.markdown(html, unsafe_allow_html=True)
+            # A pausa efetivamente "congela" a simulação durante o alerta
+            time.sleep(deadlock_alert_duration)
+            # Limpa o alerta após a pausa para evitar que ele fique preso na tela
+            deadlock_placeholder.empty()
+            # Atualiza o 'now' para que o loop continue normalmente após a pausa
+            now = time.time()
+
 
     # Renderização
     stat_placeholder.markdown(
         f"**Clientes chegados:** `{snap['customer_count']}`  \n"
         f"**Clientes atendidos:** `{snap['served_count']}`  \n"
-        f"**Clientes dispensados:** `{snap['turned_away_count']}`  \n" # Novo
+        f"**Clientes dispensados:** `{snap['turned_away_count']}`  \n"
         f"**Cadeiras ocupadas:** `{len(snap['waiting'])} / {snap['num_chairs']}`  \n"
+        f"**Deadlocks detectados:** `{st.session_state.get('deadlock_count', 0)}`  \n"
         f"**Modo:** `{'SAFE (Solução Ativa)' if enable_solution else 'BUGGY (Propenso a Deadlock)'}`"
     )
 
-    if st.session_state.deadlock_detected:
+    # Verifica se o alerta deve estar ativo (caso não tenha havido pausa)
+    if now < st.session_state.get('deadlock_alert_until', 0) and not pause_on_deadlock:
         reason_short = ("Os barbeiros não estão acordando para atender os clientes na fila. "
                         "Isso ocorre no modo BUGGY devido a uma 'condição de corrida', onde o sinal para acordar é perdido.")
         html = (
             f'<div style="padding:14px;border-radius:8px;background:#b00020;color:white;">'
-            f'<strong style="font-size:18px">⚠ DEADLOCK DETECTADO</strong><br>'
+            f'<strong style="font-size:18px">⚠ DEADLOCK DETECTADO (#{st.session_state.deadlock_count})</strong><br>'
             f'<span style="font-size:13px">{reason_short}</span>'
             f'</div>'
         )
         deadlock_placeholder.markdown(html, unsafe_allow_html=True)
-    else:
+    elif not (is_deadlock_condition and pause_on_deadlock):
         deadlock_placeholder.empty()
 
     fig = draw_snapshot(snap)
     vis_placeholder.pyplot(fig, use_container_width=True)
 
     if show_logs:
-        log_text = "\n".join(st.session_state.logs[-200:])
+        # A lista de logs já está na ordem correta (mais recente primeiro)
+        log_text = "\n".join(st.session_state.logs)
         log_placeholder.code(log_text)
     
     st.session_state.last_snapshot = snap
-    time.sleep(0.4) # Intervalo de atualização
+    time.sleep(0.4)
 
-# Se o loop terminar (simulação parada), limpa a interface
 if not st.session_state.get('sim', None):
     stat_placeholder.info('Simulação parada. Configure e pressione "Iniciar Simulação".')
     deadlock_placeholder.empty()
